@@ -3,7 +3,9 @@ package hunter.com.securelink;
 
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
-import android.widget.Button;
+import android.support.v7.widget.LinearLayoutManager;
+import android.support.v7.widget.RecyclerView;
+import android.view.View;
 import android.widget.EditText;
 import android.widget.TextView;
 
@@ -13,54 +15,104 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.Scanner;
+import java.util.ArrayList;
 
 public class Messaging extends AppCompatActivity {
+    RecyclerViewAdapter adapter;
+    ArrayList<String> msgArr;
+
     private EditText inputText;
-    private TextView outputText;
-    private Button sendButton;
 
     private int port = 0;
     private String serverIP = "";
-    private Scanner input;
+    private int startupCounter = 0;
+    private int hostclient;
+    private String message;
+    int num = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_messaging);
 
-        inputText = (EditText) findViewById(R.id.inputText);
-        outputText = (TextView) findViewById(R.id.outputText);
-        sendButton = (Button) findViewById(R.id.sendButton);
+        inputText = findViewById(R.id.edittext_chatbox);
 
-        input = new Scanner(System.in);
+        msgArr = new ArrayList<>();
 
-        System.out.println("Enter 0 to be host, enter 1 to be client.");
-        int select = input.nextInt();
-        input.nextLine();
+        RecyclerView recyclerView = findViewById(R.id.reyclerview_message_list);
+        recyclerView.setLayoutManager(new LinearLayoutManager(this));
+        adapter = new RecyclerViewAdapter(this, msgArr);
+        recyclerView.setAdapter(adapter);
 
-        System.out.println("Enter port.");
-        port = input.nextInt();
-        input.nextLine();
 
-        if (select == 0) {
-            Thread serverThread = new Thread(new serverThread());
-            serverThread.start();
-        }
-
-        else {
-            System.out.println("Enter IP.");
-            serverIP = input.nextLine();
-
-            Thread clientThread = new Thread(new clientThread());
-            clientThread.start();
-        }
+        Thread optionsThread = new Thread(new optionsThread());
+        optionsThread.start();
     }
 
     @Override
     protected void onStop() {
         super.onStop();
     }
+
+    public void addToList(String msg) {
+        msgArr.add(msg);
+        adapter.notifyItemInserted(num);
+        num++;
+    }
+
+    public void sendMessage(View view) {
+        if(startupCounter == 0) {
+            //0 = host, 1 = client
+            hostclient = Integer.parseInt(inputText.getText().toString());
+            startupCounter++;
+        }
+
+        else if(startupCounter == 1) {
+            port = Integer.parseInt(inputText.getText().toString());
+            startupCounter++;
+        }
+
+        else if(startupCounter == 2 && hostclient == 1) {
+            serverIP = inputText.getText().toString();
+            startupCounter++;
+        }
+
+        else {
+            message = inputText.getText().toString();
+        }
+
+        inputText.getText().clear();
+    }
+
+
+    class optionsThread implements Runnable {
+        public void run() {
+            addToList("Enter 0 to be host, enter 1 to be client.");
+
+            while(startupCounter == 0);
+
+            addToList("Enter server port");
+
+            while(startupCounter == 1);
+
+            if(hostclient == 0) {
+                Thread serverThread = new Thread(new serverThread());
+                serverThread.start();
+            }
+
+            else {
+                addToList("Enter server IP");
+
+                while(startupCounter == 2);
+
+                Thread clientThread = new Thread(new clientThread());
+                clientThread.start();
+            }
+        }
+    }
+
+
+
 
     // SERVER CODE
     private ServerSocket serverSocket;
@@ -86,7 +138,7 @@ public class Messaging extends AppCompatActivity {
                     inText = serverIn.readLine();
 
                     if(!inText.equals("")) {
-                        System.out.println(inText);
+                        addToList(inText);
 
                         if(serverIn.readLine().equals("end")) {
                             shutdownServer = true;
@@ -107,12 +159,11 @@ public class Messaging extends AppCompatActivity {
                 serverOut.close();
                 client.close();
                 serverSocket.close();
-                input.close();
 
-                System.out.println("Server successfully closed");
+                addToList("Server successfully closed");
             }
             catch (IOException e) {
-                System.out.println("Server failed to close");
+                addToList("Server failed to close");
                 e.printStackTrace();
             }
         }
@@ -120,16 +171,17 @@ public class Messaging extends AppCompatActivity {
 
     class serverInput implements Runnable {
         public void run() {
-            String msg;
-
             while (shutdownServer == false) {
-                msg = input.nextLine();
-                serverOut.println(msg);
-                serverOut.println("");
+                if(!message.equals("")) {
+                    serverOut.println(message);
+                    //serverOut.println("");
 
-                if(msg.equals("end")) {
-                    shutdownServer = true;
-                    System.out.println("Shutting down server");
+                    if(message.equals("end")) {
+                        shutdownServer = true;
+                        addToList("Shutting down server");
+                    }
+
+                    message = "";
                 }
 
                 try {
@@ -156,7 +208,7 @@ public class Messaging extends AppCompatActivity {
         public void run() {
             try {
                 clientSocket = new Socket(serverIP, port);
-                System.out.println("Successfully connected");
+                addToList("Successfully connected");
 
                 in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
                 out = new PrintWriter(clientSocket.getOutputStream(), true);
@@ -170,11 +222,11 @@ public class Messaging extends AppCompatActivity {
                         receivedText = in.readLine();
 
                         if (!receivedText.equals("")) {
-                            System.out.println(receivedText);
+                            addToList(receivedText);
 
                             if (receivedText.equals("end")) {
                                 shutdownClient = true;
-                                System.out.println("Server has disconnected");
+                                addToList("Server has disconnected");
                             }
                         }
 
@@ -187,7 +239,7 @@ public class Messaging extends AppCompatActivity {
                 }
             }
             catch (Exception e) {
-                System.out.println("Error in client thread");
+                addToList("Error in client thread");
                 shutdownClient = true;
                 e.printStackTrace();
             }
@@ -196,28 +248,28 @@ public class Messaging extends AppCompatActivity {
                 out.close();
                 in.close();
                 clientSocket.close();
-                input.close();
 
-                System.out.println("Client successfully closed");
+                addToList("Client successfully closed");
             }
             catch (IOException e) {
-                System.out.println("Client failed to close");
+                addToList("Client failed to close");
             }
         }
     }
 
     class clientInput implements Runnable {
         public void run() {
-            String msg;
-
             while (shutdownClient == false) {
-                msg = input.nextLine();
-                out.println(msg);
-                out.println("");
+                if(!message.equals("")) {
+                    out.println(message);
+                    //out.println("");
 
-                if(msg.equals("end")) {
-                    shutdownClient = true;
-                    System.out.println("Shutting down client");
+                    if(message.equals("end")) {
+                        shutdownClient = true;
+                        addToList("Shutting down client");
+                    }
+
+                    message = "";
                 }
 
                 try {
