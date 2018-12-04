@@ -3,7 +3,6 @@ package hunter.com.securelink;
 
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
-import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -14,18 +13,16 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.Scanner;
 
 public class Messaging extends AppCompatActivity {
     private EditText inputText;
     private TextView outputText;
     private Button sendButton;
 
-    private String message = "";
-
-    private int startupCounter = 0;
-    private int hostclient = 0;
     private int port = 0;
     private String serverIP = "";
+    private Scanner input;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -36,8 +33,28 @@ public class Messaging extends AppCompatActivity {
         outputText = (TextView) findViewById(R.id.outputText);
         sendButton = (Button) findViewById(R.id.sendButton);
 
-        Thread optionsThread = new Thread(new optionsThread());
-        optionsThread.start();
+        input = new Scanner(System.in);
+
+        System.out.println("Enter 0 to be host, enter 1 to be client.");
+        int select = input.nextInt();
+        input.nextLine();
+
+        System.out.println("Enter port.");
+        port = input.nextInt();
+        input.nextLine();
+
+        if (select == 0) {
+            Thread serverThread = new Thread(new serverThread());
+            serverThread.start();
+        }
+
+        else {
+            System.out.println("Enter IP.");
+            serverIP = input.nextLine();
+
+            Thread clientThread = new Thread(new clientThread());
+            clientThread.start();
+        }
     }
 
     @Override
@@ -45,170 +62,172 @@ public class Messaging extends AppCompatActivity {
         super.onStop();
     }
 
-    public void sendMessage(View view) {
-        if(startupCounter == 0) {
-            //0 = host, 1 = client
-            hostclient = Integer.parseInt(inputText.getText().toString());
-            startupCounter++;
-        }
-
-        else if(startupCounter == 1) {
-            port = Integer.parseInt(inputText.getText().toString());
-            startupCounter++;
-        }
-
-        else if(startupCounter == 2 && hostclient == 1) {
-            serverIP = inputText.getText().toString();
-            startupCounter++;
-        }
-
-        else {
-            message = inputText.getText().toString();
-        }
-
-        inputText.getText().clear();
-    }
-
-
-    class optionsThread implements Runnable {
-        public void run() {
-            outputText.setText("Enter 0 to be host, enter 1 to be client.");
-
-            while(startupCounter == 0);
-
-            outputText.setText("Enter server port");
-
-            while(startupCounter == 1);
-
-            if(hostclient == 0) {
-                Thread serverThread = new Thread(new serverThread());
-                serverThread.start();
-
-                serverIP = "127.0.0.1";
-            }
-
-            else {
-                outputText.setText("Enter server IP");
-
-                while(startupCounter == 2);
-            }
-
-            Thread clientThread = new Thread(new clientThread());
-            clientThread.start();
-        }
-    }
-
     // SERVER CODE
-    class serverThread implements Runnable {
-        private ServerSocket serverSocket;
-        private Socket client0;
-        private Socket client1;
-        private BufferedReader in0;
-        private BufferedReader in1;
-        private PrintWriter out0;
-        private PrintWriter out1;
+    private ServerSocket serverSocket;
+    private Socket client;
+    private BufferedReader serverIn;
+    private PrintWriter serverOut;
+    private boolean shutdownServer = false;
 
+    class serverThread implements Runnable {
         public void run() {
             try {
                 serverSocket = new ServerSocket(port);
 
-                client0 = serverSocket.accept();
-                //client1 = serverSocket.accept();
+                client = serverSocket.accept();
+                serverIn = new BufferedReader(new InputStreamReader(client.getInputStream()));
+                serverOut = new PrintWriter(client.getOutputStream(), true);
 
-                in0 = new BufferedReader(new InputStreamReader(client0.getInputStream()));
-                String receivedText0 = "";
+                Thread serverInput = new Thread(new serverInput());
+                serverInput.start();
 
-                //in1 = new BufferedReader(new InputStreamReader(client1.getInputStream()));
-                //String receivedText1 = in1.readLine();
+                String inText;
+                while (shutdownServer == false) {
+                    inText = serverIn.readLine();
 
-                out0 = new PrintWriter(client0.getOutputStream(), true);
-                //out1 = new PrintWriter(client1.getOutputStream(), true);
+                    if(!inText.equals("")) {
+                        System.out.println(inText);
 
-                while(!"end".equals(receivedText0)) {
-                    receivedText0 = in0.readLine();
-
-                    if(receivedText0 != null) {
-                        out0.println(receivedText0);
+                        if(serverIn.readLine().equals("end")) {
+                            shutdownServer = true;
+                        }
                     }
+
+                    Thread.sleep(1);
                 }
-
-                /*while((!"end".equals(receivedText0) || !"end".equals(receivedText1)) && (receivedText0 != null || receivedText1 != null)) {
-                    out0.println(receivedText1);
-                    out1.println(receivedText0);
-
-                    receivedText0 = in0.readLine();
-                    receivedText1 = in1.readLine();
-                }*/
             }
             catch (Exception e) {
-                outputText.setText("Error in server thread");
+                shutdownServer = true;
             }
 
             try {
-                in0.close();
-                //in1.close();
+                shutdownServer = true;
 
-                out0.close();
-                //out1.close();
-
-                client0.close();
-                //client1.close();
-
+                serverIn.close();
+                serverOut.close();
+                client.close();
                 serverSocket.close();
+                input.close();
 
-                outputText.setText("Server successfully closed");
+                System.out.println("Server successfully closed");
             }
             catch (IOException e) {
-                outputText.setText("Server failed to close");
+                System.out.println("Server failed to close");
+                e.printStackTrace();
+            }
+        }
+    }
+
+    class serverInput implements Runnable {
+        public void run() {
+            String msg;
+
+            while (shutdownServer == false) {
+                msg = input.nextLine();
+                serverOut.println(msg);
+                serverOut.println("");
+
+                if(msg.equals("end")) {
+                    shutdownServer = true;
+                    System.out.println("Shutting down server");
+                }
+
+                try {
+                    Thread.sleep(1);
+                }
+                catch (InterruptedException e) {
+                    e.printStackTrace();
+                    shutdownServer = true;
+                }
             }
         }
     }
 
 
-    // CLIENT CODE
-    class clientThread implements Runnable {
-        private Socket clientSocket;
-        private BufferedReader in;
-        private PrintWriter out;
 
+
+    // CLIENT CODE
+    private Socket clientSocket;
+    private BufferedReader in;
+    private PrintWriter out;
+    private boolean shutdownClient = false;
+
+    class clientThread implements Runnable {
         public void run() {
             try {
                 clientSocket = new Socket(serverIP, port);
-                outputText.setText("Successfully connected");
+                System.out.println("Successfully connected");
 
                 in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-                String receivedText = in.readLine();
-
                 out = new PrintWriter(clientSocket.getOutputStream(), true);
 
-                while(!"end".equals(message)) {
-                    if(!"".equals(message)) {
-                        out.println(message);
-                        message = "";
-                    }
+                Thread clientInput = new Thread(new clientInput());
+                clientInput.start();
 
-                    receivedText = in.readLine();
-                    if(receivedText != null) {
-                        outputText.setText(receivedText);
+                String receivedText;
+                while (shutdownClient == false) {
+                    try {
+                        receivedText = in.readLine();
+
+                        if (!receivedText.equals("")) {
+                            System.out.println(receivedText);
+
+                            if (receivedText.equals("end")) {
+                                shutdownClient = true;
+                                System.out.println("Server has disconnected");
+                            }
+                        }
+
+                        Thread.sleep(1);
+                    }
+                    catch (IOException e) {
+                        e.printStackTrace();
+                        shutdownClient = true;
                     }
                 }
             }
             catch (Exception e) {
-                outputText.setText("Error in client thread");
+                System.out.println("Error in client thread");
+                shutdownClient = true;
+                e.printStackTrace();
             }
 
             try {
                 out.close();
                 in.close();
-
                 clientSocket.close();
+                input.close();
 
-                outputText.setText("Client successfully closed");
+                System.out.println("Client successfully closed");
             }
             catch (IOException e) {
-                outputText.setText("Client failed to close");
+                System.out.println("Client failed to close");
             }
         }
     }
 
+    class clientInput implements Runnable {
+        public void run() {
+            String msg;
+
+            while (shutdownClient == false) {
+                msg = input.nextLine();
+                out.println(msg);
+                out.println("");
+
+                if(msg.equals("end")) {
+                    shutdownClient = true;
+                    System.out.println("Shutting down client");
+                }
+
+                try {
+                    Thread.sleep(1);
+                }
+                catch (InterruptedException e) {
+                    e.printStackTrace();
+                    shutdownClient = true;
+                }
+            }
+        }
+    }
 }
