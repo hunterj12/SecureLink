@@ -1,6 +1,5 @@
 <resources>
     <string name="app_name">SecureLink</string>
-    <string name="enter_message">Enter Message.</string>
-    <string name="send">Send</string>
-    <string name="output">Output</string>
+    <string name="enter_message">Enter message</string>
+    <string name="send">SEND</string>
 </resources>
